@@ -11,7 +11,7 @@ solana_nft_anchor = "Cdh53b8Xg3GwMLMaNvwQBEcU9Ncu4uCiCh4UUUZchcsP"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "devnet"
 wallet = "/Users/mijan/.config/solana/id.json"
 
 [scripts]

@@ -1,15 +1,30 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken, token::{Mint, Token, TokenAccount}};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    metadata::{
+        create_master_edition_v3, create_metadata_accounts_v3, CreateMasterEditionV3,
+        CreateMetadataAccountsV3, Metadata,
+    },
+    token::{mint_to, Mint, MintTo, Token, TokenAccount},
+};
+use mpl_token_metadata::{
+    pda::{find_master_edition_account, find_metadata_account},
+    state::DataV2,
+};
 
-declare_id!("Cdh53b8Xg3GwMLMaNvwQBEcU9Ncu4uCiCh4UUUZchcsP");
+declare_id!("9TEtkW972r8AVyRmQzgyMz8GpG7WJxJ2ZUVZnjFNJgWM"); // shouldn't be similar to mine
 
 #[program]
 pub mod solana_nft_anchor {
-    use anchor_spl::token::mint_to;
 
     use super::*;
 
-    pub fn init_nft(ctx: Context<InitNFT>) -> Result<()> {
+    pub fn init_nft(
+        ctx: Context<InitNFT>,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<()> {
         // create mint account
         let cpi_context = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -19,7 +34,53 @@ pub mod solana_nft_anchor {
                 authority: ctx.accounts.signer.to_account_info(),
             },
         );
+
         mint_to(cpi_context, 1)?;
+
+        // create metadata account
+        let cpi_context = CpiContext::new(
+            ctx.accounts.token_metadata_program.to_account_info(),
+            CreateMetadataAccountsV3 {
+                metadata: ctx.accounts.metadata_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                mint_authority: ctx.accounts.signer.to_account_info(),
+                update_authority: ctx.accounts.signer.to_account_info(),
+                payer: ctx.accounts.signer.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                rent: ctx.accounts.rent.to_account_info(),
+            },
+        );
+
+        let data_v2 = DataV2 {
+            name,
+            symbol,
+            uri,
+            seller_fee_basis_points: 0,
+            creators: None,
+            collection: None,
+            uses: None,
+        };
+
+        create_metadata_accounts_v3(cpi_context, data_v2, false, true, None)?;
+
+        //create master edition account
+        let cpi_context = CpiContext::new(
+            ctx.accounts.token_metadata_program.to_account_info(),
+            CreateMasterEditionV3 {
+                edition: ctx.accounts.master_edition_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                update_authority: ctx.accounts.signer.to_account_info(),
+                mint_authority: ctx.accounts.signer.to_account_info(),
+                payer: ctx.accounts.signer.to_account_info(),
+                metadata: ctx.accounts.metadata_account.to_account_info(),
+                token_program: ctx.accounts.token_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                rent: ctx.accounts.rent.to_account_info(),
+            },
+        );
+
+        create_master_edition_v3(cpi_context, None)?;
+
         Ok(())
     }
 }
@@ -28,7 +89,7 @@ pub mod solana_nft_anchor {
 pub struct InitNFT<'info> {
     /// CHECK: ok, we are passing in this account ourselves
     #[account(mut, signer)]
-    signer: AccountInfo<'info>,
+    pub signer: AccountInfo<'info>,
     #[account(
         init,
         payer = signer,
@@ -36,17 +97,30 @@ pub struct InitNFT<'info> {
         mint::authority = signer.key(),
         mint::freeze_authority = signer.key(),
     )]
-    mint: Account<'info, Mint>, //new
+    pub mint: Account<'info, Mint>,
     #[account(
         init_if_needed,
         payer = signer,
         associated_token::mint = mint,
-        associated_token::authority = signer,
+        associated_token::authority = signer
     )]
-    pub associated_token_account: Account<'info, TokenAccount>, //new
+    pub associated_token_account: Account<'info, TokenAccount>,
+    /// CHECK - address
+    #[account(
+        mut,
+        address=find_metadata_account(&mint.key()).0,
+    )]
+    pub metadata_account: AccountInfo<'info>,
+    /// CHECK: address
+    #[account(
+        mut,
+        address=find_master_edition_account(&mint.key()).0,
+    )]
+    pub master_edition_account: AccountInfo<'info>,
 
-    pub token_program: Program<'info, Token>, //new
-    pub associated_token_program: Program<'info, AssociatedToken>, //new
-    pub system_program: Program<'info, System>, //new
-    pub rent: Sysvar<'info, Rent> //new
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub token_metadata_program: Program<'info, Metadata>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }
